@@ -1,5 +1,7 @@
 
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 using Wordle.Data;
 
 namespace Wordle
@@ -20,6 +22,17 @@ namespace Wordle
             builder.Services.AddDbContext<ApplicationDbContext>(options =>
             options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+
+            builder.Services.AddHangfire(config =>
+                config.UseSqlServerStorage(builder.Configuration.GetConnectionString("DefaultConnection")));
+            builder.Services.AddHangfireServer();
+
+            builder.Services.AddScoped<WordRotationJob>();
+
+
+
+            builder.Services.AddHangfireServer();
+
             builder.Services.AddCors(options =>
             {
                 options.AddPolicy("AllowAll", builder =>
@@ -27,6 +40,14 @@ namespace Wordle
                     builder.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
                 });
             });
+
+
+
+            builder.Services.AddSwaggerGen(c =>
+            {
+                c.SwaggerDoc("v1", new OpenApiInfo { Title = "Wordle API", Version = "v1" });
+            });
+
 
             var app = builder.Build();
 
@@ -38,6 +59,23 @@ namespace Wordle
                 app.MapOpenApi();
 
             }
+
+            if (app.Environment.IsDevelopment())
+            {
+                app.UseSwagger();
+                app.UseSwaggerUI();
+            }
+            app.UseSwagger();
+            app.UseSwaggerUI();
+
+            app.UseHangfireDashboard();
+
+            
+            RecurringJob.AddOrUpdate<WordRotationJob>(
+                "daily-word-rotation",
+                job => job.RotateWordsDaily(),
+                Cron.Hourly 
+            );
 
             app.UseHttpsRedirection();
 

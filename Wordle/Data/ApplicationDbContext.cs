@@ -10,7 +10,7 @@ namespace Wordle.Data
             
         }
 
-        DbSet<AllWord> AllWords { get; set; }
+        public DbSet<AllWord> AllWords { get; set; }
 
     }
 }
