@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Wordle.Data;
+using Wordle.Services;
 
 namespace Wordle.Controllers
 {
@@ -12,14 +13,13 @@ namespace Wordle.Controllers
     {
 
         public ApplicationDbContext _context;
-        private static int guessCount = 0;
+        private readonly SessionServices _sessionServices;
         private const int maxTries = 6;
-     
 
-
-        public WordleController(ApplicationDbContext context)
+        public WordleController(ApplicationDbContext context, SessionServices sessionServices)
         {
             _context = context;
+            _sessionServices = sessionServices;
         }
 
         //1 tabel -> krejt fjalt  ->bool FjalaEDites
@@ -29,27 +29,43 @@ namespace Wordle.Controllers
         [HttpPost("guess")]
         public async Task<IActionResult> WordGuess([FromBody] string guess)
         {
-           
+
+            var userData = _sessionServices.GetCookie();
+            userData ??= new();
+
+            if (userData.GuessDate.Date == DateTime.Now.Date && userData.HasFinished)
+            { 
+                
+            }
+            if (userData.GuessDate.Date != DateTime.Now.Date)
+            {
+                userData.GuessCount = 0;
+            }
+
+            if (userData.GuessCount >= maxTries)
+            {
+                return BadRequest("You run out of tries");
+            }
+
             guess = guess.ToUpper();
 
 
-            if(guess.Length != 5)
+            if (guess.Length != 5)
             {
                 return BadRequest("Worlde has only 5 letters");
             }
 
-                //merr prej db krejt fjalt qe jan true
-                var wordList = await _context.AllWords.Where(x => x.WordOfDay).ToListAsync();
+            //merr prej db krejt fjalt qe jan true
+            var wordList = await _context.AllWords.Where(x => x.WordOfDay).FirstOrDefaultAsync();
 
-                
-                if (!wordList.Any())
-                {
-                    return BadRequest("Try another word");
-                }
 
-               // var random = new Random();
-                var chosenWord = wordList.First().Word;
+            if (wordList is null)
+            {
+                return BadRequest("Something went wrong");
+            }
 
+
+            var chosenWord = wordList.Word;
 
             var result = new List<string>();
 
@@ -58,9 +74,8 @@ namespace Wordle.Controllers
                 if (guess[i] == chosenWord[i])
                 {
                     result.Add("correct");
-                    
-
-                }else if (chosenWord.Contains(guess[i]))
+                }
+                else if (chosenWord.Contains(guess[i]))
                 {
                     result.Add("present");
                 }
@@ -69,28 +84,36 @@ namespace Wordle.Controllers
                     result.Add("absent");
                 }
             }
+            userData.GuessCount++;
+            userData.HasFinished = !result.Contains("absent") && !result.Contains("present");
+            userData.GuessDate = DateTime.Now;
 
-            guessCount++;
+            _sessionServices.SetCookie(userData);
 
 
-            if(guessCount >= maxTries)
-            {
-                var allWords = await _context.AllWords.ToListAsync();
 
-                foreach(var word in allWords)
-                {
-                    word.WordOfDay = false;
-                }
+            //if (guessCount >= maxTries)
+            //{
+            //    var allWords = await _context.AllWords.ToListAsync();
 
-                var rndm = new Random();
-                var newWord = allWords[rndm.Next(allWords.Count)];
-                newWord.WordOfDay = true;
-            }
+            //    foreach (var word in allWords)
+            //    {
+            //        word.WordOfDay = false;
+            //    }
 
-            await _context.SaveChangesAsync();
-            guessCount = 0;
+            //    var rndm = new Random();
+            //    var newWord = allWords[rndm.Next(allWords.Count)];
+            //    newWord.WordOfDay = true;
+            //}
 
-            return Ok(result);
+            //await _context.SaveChangesAsync();
+            //guessCount = 0;
+
+            return Ok(new { 
+                result, 
+                hasWon = userData.HasFinished,
+                remainingTries = maxTries - userData.GuessCount
+            });
         }
     }
 }

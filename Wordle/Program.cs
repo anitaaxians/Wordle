@@ -3,6 +3,7 @@ using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Wordle.Data;
+using Wordle.Services;
 
 namespace Wordle
 {
@@ -27,20 +28,24 @@ namespace Wordle
                 config.UseSqlServerStorage(builder.Configuration.GetConnectionString("DefaultConnection")));
             builder.Services.AddHangfireServer();
 
+            builder.Services.AddHttpContextAccessor(); // required!
             builder.Services.AddScoped<WordRotationJob>();
 
-
+            builder.Services.AddScoped<SessionServices>();
 
             builder.Services.AddHangfireServer();
 
             builder.Services.AddCors(options =>
             {
-                options.AddPolicy("AllowAll", builder =>
+                options.AddPolicy("AllowFrontend", policy =>
                 {
-                    builder.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+                    policy
+                        .WithOrigins("http://localhost:3001") // <-- frontend port
+                        .AllowCredentials()
+                        .AllowAnyHeader()
+                        .AllowAnyMethod();
                 });
             });
-
 
 
             builder.Services.AddSwaggerGen(c =>
@@ -74,14 +79,14 @@ namespace Wordle
             RecurringJob.AddOrUpdate<WordRotationJob>(
                 "daily-word-rotation",
                 job => job.RotateWordsDaily(),
-                Cron.Hourly 
+                Cron.Daily 
             );
 
             app.UseHttpsRedirection();
 
             app.UseAuthorization();
 
-            app.UseCors("AllowAll");
+            app.UseCors("AllowFrontend");
             app.MapControllers();
 
             app.Run();
